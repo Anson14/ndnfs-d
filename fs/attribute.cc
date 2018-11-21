@@ -28,51 +28,51 @@ int ndnfs_getattr(const char *path, struct stat *stbuf)
 {
   FILE_LOG(LOG_DEBUG) << "ndnfs_getattr: path=" << path << endl;
 
-  // sqlite3_stmt *stmt;
-  // sqlite3_prepare_v2(db, "SELECT mode, atime, current_version, size, nlink, type FROM file_system WHERE path = ?", -1, &stmt, 0);
-  // sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
-  // int res = sqlite3_step(stmt);
-  // if (res == SQLITE_ROW)
-  // {
-  //   int type = sqlite3_column_int(stmt, 5);
-  //   if (type == DIRECTORY)
-  //   {
-  //     stbuf->st_mode = S_IFDIR | sqlite3_column_int(stmt, 0);
-  //   }
-  //   else if (type == REGULAR)
-  //   {
-  //     stbuf->st_mode = S_IFREG | sqlite3_column_int(stmt, 0);
-  //   }
-  //   else
-  //     return -errno;
-  //   stbuf->st_atime = sqlite3_column_int(stmt, 1);
-  //   stbuf->st_mtime = sqlite3_column_int(stmt, 2);
-  //   stbuf->st_size = sqlite3_column_int(stmt, 3);
-  //   stbuf->st_nlink = sqlite3_column_int(stmt, 4);
-  //   stbuf->st_uid = ndnfs::user_id;
-  //   stbuf->st_gid = ndnfs::group_id;
-  //   sqlite3_finalize(stmt);
-  //   return 0;
-  // }
-  // else
-  // {
-  //   sqlite3_finalize(stmt);
-  //   FILE_LOG(LOG_ERROR) << "ndnfs_getattr: get_attr failed. path:" << path << ". Errno " << errno << endl;
-  //   return -errno;
-  // }
-
-  char fullPath[PATH_MAX];
-  abs_path(fullPath, path);
-
-  int ret = lstat(fullPath, stbuf);
-
-  if (ret == -1)
+  sqlite3_stmt *stmt;
+  sqlite3_prepare_v2(db, "SELECT mode, atime, current_version, size, nlink, type FROM file_system WHERE path = ?", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+  int res = sqlite3_step(stmt);
+  if (res == SQLITE_ROW)
   {
-    FILE_LOG(LOG_ERROR) << "ndnfs_getattr: get_attr failed. Full path " << fullPath << ". Errno " << errno << endl;
+    int type = sqlite3_column_int(stmt, 5);
+    if (type == DIRECTORY)
+    {
+      stbuf->st_mode = S_IFDIR | sqlite3_column_int(stmt, 0);
+    }
+    else if (type == REGULAR)
+    {
+      stbuf->st_mode = S_IFREG | sqlite3_column_int(stmt, 0);
+    }
+    else
+      return -errno;
+    stbuf->st_atime = sqlite3_column_int(stmt, 1);
+    stbuf->st_mtime = sqlite3_column_int(stmt, 2);
+    stbuf->st_size = sqlite3_column_int(stmt, 3);
+    stbuf->st_nlink = sqlite3_column_int(stmt, 4);
+    stbuf->st_uid = ndnfs::user_id;
+    stbuf->st_gid = ndnfs::group_id;
+    sqlite3_finalize(stmt);
+    return 0;
+  }
+  else
+  {
+    sqlite3_finalize(stmt);
+    FILE_LOG(LOG_ERROR) << "ndnfs_getattr: get_attr failed. path:" << path << ". Errno " << errno << endl;
     return -errno;
   }
-  // FILE_LOG(LOG_DEBUG) << "   ???????" << ret << endl;
-  return ret;
+
+  // char fullPath[PATH_MAX];
+  // abs_path(fullPath, path);
+
+  // int ret = lstat(fullPath, stbuf);
+
+  // if (ret == -1)
+  // {
+  //   FILE_LOG(LOG_ERROR) << "ndnfs_getattr: get_attr failed. Full path " << fullPath << ". Errno " << errno << endl;
+  //   return -errno;
+  // }
+  // // FILE_LOG(LOG_DEBUG) << "   ???????" << ret << endl;
+  // return ret;
 }
 
 int ndnfs_chmod(const char *path, mode_t mode)

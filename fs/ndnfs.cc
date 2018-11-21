@@ -397,8 +397,8 @@ CREATE INDEX id_seg ON file_segments (path, version, segment);   \n\
   create_fuse_operations(&ndnfs_fs_ops);
 
   cout<< "NDNFS: Build root directory..."<<endl;
-  const char *MAKE_ROOt_DIR ="INSERT IF NOT EXISTS INTO file_system (path, current_version, mime_type, ready_signed, type) VALUES('/', 0, '', 0, 8);";
-  sqlite3_exec(db, MAKE_ROOt_DIR, NULL, NULL, NULL);
+  const char *MAKE_ROOT_DIR ="INSERT INTO file_system (path, current_version, mime_type, ready_signed, type) VALUES('/', 0, '', 0, 8);";
+  sqlite3_exec(db, MAKE_ROOT_DIR, NULL, NULL, NULL);
 
   cout << "NDNFS: enter FUSE main loop. Log written to " << ndnfs::logging_path << endl;
   return fuse_main(args.argc, args.argv, &ndnfs_fs_ops, NULL);

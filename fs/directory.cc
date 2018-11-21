@@ -27,58 +27,80 @@ using namespace std;
 int ndnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
 {
   FILE_LOG(LOG_DEBUG) << "ndnfs_readdir: path=" << path << endl;
-  // // read from db
-  // sqlite3_stmt *stmt;
-  // sqlite3_prepare_v2(db, "SELECT * FROM file_system WHERE path = ??%;", -1, &stmt, 0);
-  
-  // sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
-  // sqlite3_bind_text(stmt, 2, "%", -1, SQLITE_STATIC);
+  // read from db
+  sqlite3_stmt *stmt;
 
-  // cout<< "IAMHERE\n";
-  // int res = sqlite3_step(stmt);
-  // cout<< "EVERTHING OK!\n";
-  // // {
-  //   const unsigned char* dir_name = sqlite3_column_text(stmt, 0);
-  //   cout<< dir_name<< endl;
+  int level = 0;  // director's level
 
-  // // }
-
-  // // Means no such dir
-  // if (res == -1) {
-  //   sqlite3_finalize(stmt);
-  //   return -ENOENT;
-  // }
-  // sqlite3_finalize(stmt);
-
-
- // Read the actual dir
-  DIR *dp;
-  struct dirent *de;
-
-  (void)offset;
-  (void)fi;
-
-  char fullPath[PATH_MAX];
-  abs_path(fullPath, path);
-
-  dp = opendir(fullPath);
-
-  if (dp == NULL)
-    return -errno;
-
-  while ((de = readdir(dp)) != NULL)
+  // Get father dir's level
+  sqlite3_prepare_v2(db, "SELECT ready_signed FROM file_system WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+  int res = sqlite3_step(stmt);
+  if (res != SQLITE_ROW)
   {
-    struct stat st;
-    memset(&st, 0, sizeof(st));
-    st.st_ino = de->d_ino;
-    st.st_mode = de->d_type << 12;
-    if (filler(buf, de->d_name, &st, 0))
-      break;
+    sqlite3_finalize(stmt);
+    return -ENOENT;
   }
-  
+  level = sqlite3_column_int(stmt, 0);
+  level +=1;
+  sqlite3_finalize(stmt);
 
-  closedir(dp);
+  sqlite3_prepare_v2(db, "SELECT path FROM file_system WHERE path LIKE ? AND ready_signed = ?;", -1, &stmt, 0);
+  char path_notexact[100];
+  strcpy(path_notexact, path);
+  if (level == 1)
+    strcat(path_notexact, "%");
+  else
+    strcat(path_notexact, "/%");
+  sqlite3_bind_text(stmt, 1, path_notexact, -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, level);
+  // Means no such dir
+  // if (res != SQLITE_ROW)
+
+  filler(buf, ".", NULL, 0);
+  filler(buf, "..", NULL, 0);
+  while(sqlite3_step(stmt) == SQLITE_ROW)
+  {
+    // FILE_LOG(LOG_DEBUG)<<"path: "<< sqlite3_column_text(stmt, 0)<< endl;
+    char child_dir[sqlite3_column_bytes(stmt, 0)];
+    strcpy(child_dir, (char *)sqlite3_column_text(stmt, 0));
+    string prefix;
+    string name;
+    split_last_component(child_dir, prefix, name);
+    FILE_LOG(LOG_DEBUG)<<"path: "<< name<< endl;  
+    filler(buf, name.c_str(), NULL, 0);
+  }
+
+  sqlite3_finalize(stmt);
   return 0;
+
+  // Read the actual dir
+  // DIR *dp;
+  // struct dirent *de;
+
+  // (void)offset;
+  // (void)fi;
+
+  // char fullPath[PATH_MAX];
+  // abs_path(fullPath, path);
+
+  // dp = opendir(fullPath);
+
+  // if (dp == NULL)
+  //   return -errno;
+
+  // while ((de = readdir(dp)) != NULL)
+  // {
+  //   struct stat st;
+  //   memset(&st, 0, sizeof(st));
+  //   st.st_ino = de->d_ino;
+  //   st.st_mode = de->d_type << 12;
+  //   FILE_LOG(LOG_DEBUG)<< "st"<< st.st_ino << endl;
+  //   if (filler(buf, de->d_name, &st, 0))
+  //     break;
+  // }
+  // closedir(dp);
+  // return 0;
 }
 
 /*
@@ -95,6 +117,7 @@ int ndnfs_mkdir(const char *path, mode_t mode)
 
   string dir_path, dir_name;
   split_last_component(path, dir_path, dir_name);
+  int level = 0;
 
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2(db, "SELECT * FROM file_system WHERE path = ?;", -1, &stmt, 0);
@@ -109,7 +132,7 @@ int ndnfs_mkdir(const char *path, mode_t mode)
   sqlite3_finalize(stmt);
 
   // Cannot create file without creationg necessary folders
-  sqlite3_prepare_v2(db, "SELECT * FROM file_system WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_prepare_v2(db, "SELECT ready_signed FROM file_system WHERE path = ?;", -1, &stmt, 0);
   sqlite3_bind_text(stmt, 1, dir_path.c_str(), -1, SQLITE_STATIC);
   res = sqlite3_step(stmt);
   if (res != SQLITE_ROW)
@@ -117,6 +140,7 @@ int ndnfs_mkdir(const char *path, mode_t mode)
     sqlite3_finalize(stmt);
     return -ENOENT;
   }
+  level = sqlite3_column_int(stmt, 0);
   sqlite3_finalize(stmt);
 
   // Generate first version entry for the new file
@@ -128,17 +152,20 @@ int ndnfs_mkdir(const char *path, mode_t mode)
   sqlite3_finalize(stmt);
 
   // Add the file(dir is a kind of file) entry to database
+  // For directory, I use ready_signed to indicate the level
+  // of which dir.
   sqlite3_prepare_v2(db,
                      "INSERT INTO file_system \
-                      (path, current_version, mime_type, ready_signed, type) \
-                      VALUES (?, ?, ?, ?, ?);",
+                      (path, current_version, mime_type, ready_signed, type, size) \
+                      VALUES (?, ?, ?, ?, ?, 4096);",
                      -1, &stmt, 0);
   sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 2, ver); // current version
   char *mime_type = "";
   sqlite3_bind_text(stmt, 3, mime_type, -1, SQLITE_STATIC); // mime_type based on ext
-  enum SignatureState signatureState = NOT_READY;
-  sqlite3_bind_int(stmt, 4, signatureState);
+  // enum SignatureState signatureState = NOT_READY;
+  // ready_signed indicate dir`s level
+  sqlite3_bind_int(stmt, 4, level + 1);
   enum FileType fileType = DIRECTORY;
   sqlite3_bind_int(stmt, 5, fileType);
 
