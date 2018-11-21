@@ -33,7 +33,7 @@ int ndnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
   int level = 0;  // director's level
 
   // Get father dir's level
-  sqlite3_prepare_v2(db, "SELECT ready_signed FROM file_system WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_prepare_v2(db, "SELECT level FROM file_system WHERE path = ?;", -1, &stmt, 0);
   sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
   int res = sqlite3_step(stmt);
   if (res != SQLITE_ROW)
@@ -45,7 +45,7 @@ int ndnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
   level +=1;
   sqlite3_finalize(stmt);
 
-  sqlite3_prepare_v2(db, "SELECT path FROM file_system WHERE path LIKE ? AND ready_signed = ?;", -1, &stmt, 0);
+  sqlite3_prepare_v2(db, "SELECT path FROM file_system WHERE path LIKE ? AND level = ?;", -1, &stmt, 0);
   char path_notexact[100];
   strcpy(path_notexact, path);
   if (level == 1)
@@ -67,7 +67,7 @@ int ndnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
     string prefix;
     string name;
     split_last_component(child_dir, prefix, name);
-    FILE_LOG(LOG_DEBUG)<<"path: "<< name<< endl;  
+    // FILE_LOG(LOG_DEBUG)<<"path: "<< name<< endl;  
     filler(buf, name.c_str(), NULL, 0);
   }
 
@@ -132,7 +132,7 @@ int ndnfs_mkdir(const char *path, mode_t mode)
   sqlite3_finalize(stmt);
 
   // Cannot create file without creationg necessary folders
-  sqlite3_prepare_v2(db, "SELECT ready_signed FROM file_system WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_prepare_v2(db, "SELECT level FROM file_system WHERE path = ?;", -1, &stmt, 0);
   sqlite3_bind_text(stmt, 1, dir_path.c_str(), -1, SQLITE_STATIC);
   res = sqlite3_step(stmt);
   if (res != SQLITE_ROW)
@@ -141,6 +141,7 @@ int ndnfs_mkdir(const char *path, mode_t mode)
     return -ENOENT;
   }
   level = sqlite3_column_int(stmt, 0);
+  level += 1;
   sqlite3_finalize(stmt);
 
   // Generate first version entry for the new file
@@ -156,18 +157,18 @@ int ndnfs_mkdir(const char *path, mode_t mode)
   // of which dir.
   sqlite3_prepare_v2(db,
                      "INSERT INTO file_system \
-                      (path, current_version, mime_type, ready_signed, type, size) \
-                      VALUES (?, ?, ?, ?, ?, 4096);",
+                      (path, current_version, mime_type, ready_signed, type, size, level) \
+                      VALUES (?, ?, ?, ?, ?, 4096, ?);",
                      -1, &stmt, 0);
   sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 2, ver); // current version
   char *mime_type = "";
   sqlite3_bind_text(stmt, 3, mime_type, -1, SQLITE_STATIC); // mime_type based on ext
-  // enum SignatureState signatureState = NOT_READY;
-  // ready_signed indicate dir`s level
-  sqlite3_bind_int(stmt, 4, level + 1);
+  enum SignatureState signatureState = NOT_READY;
+  sqlite3_bind_int(stmt, 4, signatureState);
   enum FileType fileType = DIRECTORY;
   sqlite3_bind_int(stmt, 5, fileType);
+  sqlite3_bind_int(stmt, 6, level);
 
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);

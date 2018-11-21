@@ -345,6 +345,7 @@ CREATE TABLE IF NOT EXISTS                        \n\
     atime                INTEGER,                 \n\    
     nlink                INTEGER,                 \n\
     size                 INTEGER,                 \n\    
+    level                INTEGER,                 \n\ 
     PRIMARY KEY (path)                            \n\
   );                                              \n\
 CREATE INDEX id_path ON file_system (path);       \n\
@@ -397,7 +398,7 @@ CREATE INDEX id_seg ON file_segments (path, version, segment);   \n\
   create_fuse_operations(&ndnfs_fs_ops);
 
   cout<< "NDNFS: Build root directory..."<<endl;
-  const char *MAKE_ROOT_DIR ="INSERT INTO file_system (path, current_version, mime_type, ready_signed, type) VALUES('/', 0, '', 0, 8);";
+  const char *MAKE_ROOT_DIR ="INSERT INTO file_system (path, current_version, mime_type, ready_signed, type, level) VALUES('/', 0, '', 0, 8, 0);";
   sqlite3_exec(db, MAKE_ROOT_DIR, NULL, NULL, NULL);
 
   cout << "NDNFS: enter FUSE main loop. Log written to " << ndnfs::logging_path << endl;

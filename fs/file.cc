@@ -27,7 +27,7 @@ using namespace std;
 
 int ndnfs_open(const char *path, struct fuse_file_info *fi)
 {
-  FILE_LOG(LOG_DEBUG)<<"ndnfs_open: path="<< path<<endl;
+  FILE_LOG(LOG_DEBUG) << "ndnfs_open: path=" << path << endl;
   // The actual open operation
   char full_path[PATH_MAX];
   abs_path(full_path, path);
@@ -71,7 +71,7 @@ int ndnfs_open(const char *path, struct fuse_file_info *fi)
     // Copy old data from current version to the temp version
     // if (duplicate_version(path, curr_ver, temp_ver) < 0) //This function has not been implenmented
     copycurr_segment(path, curr_ver);
-      // return -EACCES;
+    // return -EACCES;
 
     break;
   default:
@@ -104,8 +104,24 @@ int ndnfs_mknod(const char *path, mode_t mode, dev_t dev)
 
   sqlite3_finalize(stmt);
 
-  // TODO: We cannot create file without creating necessary folders in advance
+  // We cannot create file without creating necessary folders in advance
+  // Get father dir's level
+  int level = 0;
+  string path_father;
+  string name;
+  split_last_component(path, path_father, name);
+  sqlite3_prepare_v2(db, "SELECT level FROM file_system WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path_father.c_str(), -1, SQLITE_STATIC);
+  res = sqlite3_step(stmt);
+  if (res != SQLITE_ROW)
+  {
+    sqlite3_finalize(stmt);
+    return -ENOENT;
+  }
+  level = sqlite3_column_int(stmt, 0);
+  level += 1;
 
+  sqlite3_finalize(stmt);
   // Infer the mime_type of the file based on extension
   char mime_type[100] = "";
   mime_infer(mime_type, path); // Get Type of New File
@@ -120,11 +136,7 @@ int ndnfs_mknod(const char *path, mode_t mode, dev_t dev)
   sqlite3_finalize(stmt);
 
   // Add the file entry to database
-  sqlite3_prepare_v2(db,
-                     "INSERT INTO file_system \
-                      (path, current_version, mime_type, ready_signed, type, mode, atime, mtime, nlink, size) \
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
-                     -1, &stmt, 0);
+  sqlite3_prepare_v2(db, "INSERT INTO file_system (path, current_version, mime_type, ready_signed, type, mode, atime, nlink, size, level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", -1, &stmt, 0);
   sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 2, ver);                           // current version
   sqlite3_bind_text(stmt, 3, mime_type, -1, SQLITE_STATIC); // mime_type based on ext
@@ -164,8 +176,11 @@ int ndnfs_mknod(const char *path, mode_t mode, dev_t dev)
   // sqlite3_bind_int(stmt, 8, ver);
   sqlite3_bind_int(stmt, 8, 0);
   sqlite3_bind_int(stmt, 9, 0);
+  sqlite3_bind_int(stmt, 10, level);
 
-  sqlite3_step(stmt);
+  res = sqlite3_step(stmt);
+  if (res != SQLITE_OK)
+    FILE_LOG(LOG_DEBUG) << " Insert into file_system error!" << endl;
   sqlite3_finalize(stmt);
 
   // Create the actual file
@@ -240,7 +255,7 @@ int ndnfs_read(const char *path, char *buf, size_t size, off_t offset, struct fu
     memmove(buf, content + content_offset, len);
     // FILE_LOG(LOG_DEBUG)<< "content:"<< content_size<< endl;
     sqlite3_finalize(stmt);
-    if (content_size < seg_size) 
+    if (content_size < seg_size)
     {
       // means this segment is the last segment
       return len;
@@ -268,15 +283,16 @@ int ndnfs_read(const char *path, char *buf, size_t size, off_t offset, struct fu
         sqlite3_finalize(stmt);
         // strcat(buf, read_content);
         // FILE_LOG(LOG_DEBUG)<< "circle: "<< read_len<< endl;
-        memmove(buf+len, read_content, read_len);
+        memmove(buf + len, read_content, read_len);
         len += read_len;
-        if(read_len < seg_size) {
+        if (read_len < seg_size)
+        {
           return len;
         }
       }
       else
       {
-        FILE_LOG(LOG_DEBUG)<< "db error!!!"<< endl;
+        FILE_LOG(LOG_DEBUG) << "db error!!!" << endl;
         sqlite3_finalize(stmt);
         // break;
         return -errno;
@@ -326,7 +342,6 @@ int ndnfs_write(const char *path, const char *buf, size_t size, off_t offset, st
   sqlite3_finalize(stmt);
 
   addtemp_segment(path, buf, size, offset);
-
 
   // Create or change tmp_version in db (100000 means temp version)
   // char buf_seg[ndnfs::seg_size];
@@ -519,7 +534,6 @@ int ndnfs_release(const char *path, struct fuse_file_info *fi)
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-
     // TODO: since older version is removed anyway, it makes sense to rely on system
     // function calls for multiple file accesses. Simplification of versioning method?
     //if (curr_ver != -1)
@@ -558,7 +572,6 @@ int ndnfs_release(const char *path, struct fuse_file_info *fi)
     }
 
     ndnfs_updateattr(path, curr_version);
-
 
     //   char full_path[PATH_MAX];
     //   abs_path(full_path, path);
