@@ -1,0 +1,9 @@
+/tmp/dir/try.txt
+- 1542243508 DEBUG: ndnfs_read: path=/try.txt, offset=0, size=4096
+- 1542243508 DEBUG: ndnfs_getattr: path=/try.txt
+- 1542243508 DEBUG: ndnfs_release: path=/try.txt, flag=0x8000
+- 1542243510 DEBUG: ndnfs_release: path=/.try.txt.swp, flag=0x28002
+- 1542243510 DEBUG: ndnfs_getattr: path=/.try.txt.swp
+- 1542243510 DEBUG: sign_segment: path=/.try.txt.swp, ver=1542243510, seg=0, len=4096
+- 1542243510 DEBUG: sign_segment: segment name is /ndn/broadcast/ndnfs/.try.txt.swp/%FD%5B%EC%C4%B6/%00%00
+- 1542243510 DEBUG: ndnfs_unlink: path=/.try.txt.swp
