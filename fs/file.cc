@@ -81,6 +81,12 @@ int ndnfs_open(const char *path, struct fuse_file_info *fi)
     break;
   }
 
+  // When user open a file, make nlink+1
+  sqlite3_prepare_v2(db, "UPDATE file_system set nlink = nlink + 1 WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+  res = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+
   return 0;
 }
 
@@ -468,11 +474,11 @@ int ndnfs_truncate(const char *path, off_t length)
   sqlite3_finalize(stmt);
 
   truncate_all_segment(path, ver, length);
-  
+
   // For implentation version control, We can not truncate the
   // real file in database
   // easiler, we can just rewrite the segments that user demand.
-// 
+  //
   // int curr_len = 0;
   // int seg = 0;
   // char data[length];
@@ -540,11 +546,28 @@ int ndnfs_unlink(const char *path)
   // else
   // {
 
+  sqlite3_stmt *stmt;
+
+  // check if any user is using this file
+  sqlite3_prepare_v2(db, "SELECT nlink from file_system WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+  int res = sqlite3_step(stmt);
+  if (res != SQLITE_ROW) {
+    FILE_LOG(LOG_ERROR)<<"remove error, no such file!"<< endl;
+    sqlite3_finalize(stmt);
+    return -errno;
+  }
+  int nlink = sqlite3_column_int(stmt, 0);
+  if (nlink != 0) {
+    FILE_LOG(LOG_ERROR)<<"remove error, "<< nlink << " users are using this file"<< endl;
+    return -errno;
+  }
+  sqlite3_finalize(stmt);
+
   // TODO: update remove_versions
   remove_file_entry(path);
 
   // Then, remove file entry
-  sqlite3_stmt *stmt;
   sqlite3_prepare_v2(db, "DELETE FROM file_system WHERE path = ?;", -1, &stmt, 0);
   sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
   sqlite3_step(stmt);
@@ -670,7 +693,12 @@ int ndnfs_release(const char *path, struct fuse_file_info *fi)
 
     //   close(fd);
   }
-
+  
+ // When user release a file, make nlink-1
+    sqlite3_prepare_v2(db, "UPDATE file_system SET nlink = nlink-1 WHERE path = ?;", -1, &stmt, 0);
+    sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+    res = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
   return 0;
 }
 
@@ -862,17 +890,17 @@ int ndnfs_rename(const char *from, const char *to)
   sqlite3_finalize(stmt);
 
   // actual renaming
-  char full_path_from[PATH_MAX];
-  abs_path(full_path_from, from);
+  // char full_path_from[PATH_MAX];
+  // abs_path(full_path_from, from);
 
-  char full_path_to[PATH_MAX];
-  abs_path(full_path_to, to);
+  // char full_path_to[PATH_MAX];
+  // abs_path(full_path_to, to);
 
-  res = rename(full_path_from, full_path_to);
+  // res = rename(full_path_from, full_path_to);
 
-  FILE_LOG(LOG_ERROR) << "ndnfs_rename: rename should trigger resign of everything, which is not yet implemented" << endl;
-  if (res == -1)
-    return -errno;
+  // FILE_LOG(LOG_ERROR) << "ndnfs_rename: rename should trigger resign of everything, which is not yet implemented" << endl;
+  // if (res == -1)
+  //   return -errno;
 
   return 0;
 }
