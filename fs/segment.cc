@@ -77,7 +77,7 @@ int sign_segment(const char *path, int ver, int seg, const char *data, int len)
   int sig_size = signature.size();
 
   sqlite3_stmt *stmt;
-  sqlite3_prepare_v2(db, "UPDATE file_segments SET signature = ? WHERE path = ? AND version = ? AND segment = ?;", -1, &stmt, 0);
+  sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO file_segments (signature ,path, version, segment, content) VALUES (?, ?, ?, ?, ?);", -1, &stmt, 0);
   // sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
   // sqlite3_bind_int(stmt, 2, ver);
   // sqlite3_bind_int(stmt, 3, seg);
@@ -85,6 +85,7 @@ int sign_segment(const char *path, int ver, int seg, const char *data, int len)
   sqlite3_bind_text(stmt, 2, path, -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 3, ver);
   sqlite3_bind_int(stmt, 4, seg);
+  sqlite3_bind_blob(stmt, 5, data, len, SQLITE_STATIC);
   int res = sqlite3_step(stmt);
   if (res != SQLITE_OK)
   {
@@ -216,6 +217,175 @@ void truncate_segment(const char *path, const int ver, const int seg, const off_
   }
 }
 
+int truncate_all_segment(const char *path, const int ver, const off_t length)
+{
+  FILE_LOG(LOG_DEBUG) << "truncate_all_segment: path=" << path << std::dec << ", ver=" << ver << ", length=" << length << endl;
+
+  sqlite3_stmt *stmt_main;
+  sqlite3_prepare_v2(db, "SELECT * FROM file_segments WHERE path = ? AND version = ?;", -1, &stmt_main, 0);
+  sqlite3_bind_text(stmt_main, 1, path, -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt_main, 2, ver);
+  int seg = -1;
+  int res;
+  int length_curr = 0;
+  bool flag_over = false;
+  int curr_ver = time(0);
+
+  while (sqlite3_step(stmt_main) == SQLITE_ROW)
+  {
+    seg++;
+    if (length == 0 || flag_over)
+    {
+      sqlite3_stmt *stmt;
+      sqlite3_prepare_v2(db, "UPDATE file_system SET current_version = ? WHERE path = ?;", -1, &stmt, 0);
+      sqlite3_bind_int(stmt, 1, curr_ver); // set current_version to the current timestamp
+      sqlite3_bind_text(stmt, 2, path, -1, SQLITE_STATIC);
+      res = sqlite3_step(stmt);
+      if (res != SQLITE_OK && res != SQLITE_DONE)
+      {
+        FILE_LOG(LOG_ERROR) << "truncate all segment: update file_system error. " << res << endl;
+        return res;
+      }
+      sqlite3_finalize(stmt);
+      FILE_LOG(LOG_DEBUG) << "here:" << curr_ver << endl;
+      return 0;
+      // sqlite3_stmt *stmt;
+      // sqlite3_prepare_v2(db, "DELETE FROM file_segments WHERE path = ? AND version = ? AND segment = ?;", -1, &stmt, 0);
+      // sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+      // sqlite3_bind_int(stmt, 2, ver);
+      // sqlite3_bind_int(stmt, 3, seg);
+      // sqlite3_step(stmt);
+      // sqlite3_finalize(stmt);
+    }
+    else
+    {
+      int size = sqlite3_column_bytes(stmt_main, 4);
+      char data[size];
+      int len_use = 0;
+      if ((long) size < (length - (seg * ndnfs::seg_size)))
+      {
+        len_use = size;
+      }
+      else
+      {
+        len_use = (length - (seg * ndnfs::seg_size));
+        flag_over = true;
+      }
+      length_curr += len_use;
+      memmove(data, (char *)sqlite3_column_blob(stmt_main, 4), len_use);
+      sqlite3_stmt *stmt;
+      // sqlite3_prepare_v2(db, "IPDATE file_segments SET content = ? WHERE path = ? AND segment = ? and version = ?;", -1, &stmt, 0);
+      sqlite3_prepare_v2(db, "INSERT INTO file_segments (content, path, segment, version, signature) VALUES (?, ?, ?, ?, 'NONE');", -1, &stmt, 0);
+      sqlite3_bind_blob(stmt, 1, data, len_use, SQLITE_STATIC);
+      sqlite3_bind_text(stmt, 2, path, -1, SQLITE_STATIC);
+      sqlite3_bind_int(stmt, 3, seg);
+      sqlite3_bind_int(stmt, 4, curr_ver);
+      res = sqlite3_step(stmt);
+      sqlite3_finalize(stmt);
+      FILE_LOG(LOG_DEBUG)<< "len_use"<<len_use<< " min" << length - (seg * ndnfs::seg_size)<< endl;
+      if (length_curr > length)
+        break;
+      // sign_segment(path, ver, seg, data, len_use);
+    }
+  }
+  if (flag_over)
+  {
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, "UPDATE file_system SET current_version = ? WHERE path = ?;", -1, &stmt, 0);
+    sqlite3_bind_int(stmt, 1, curr_ver); // set current_version to the current timestamp
+    sqlite3_bind_text(stmt, 2, path, -1, SQLITE_STATIC);
+    res = sqlite3_step(stmt);
+    if (res != SQLITE_OK && res != SQLITE_DONE)
+    {
+      FILE_LOG(LOG_ERROR) << "truncate all segment: update file_system error. " << res << endl;
+      return res;
+    }
+    sqlite3_finalize(stmt);
+    FILE_LOG(LOG_DEBUG) << "here:" << curr_ver << endl;
+    return 0;
+  }
+}
+
+// int truncate_all_segment(const char *path, const int ver, const off_t length)
+// {
+//   FILE_LOG(LOG_DEBUG) << "truncate_all_segment: path=" << path << std::dec << ", ver=" << ver << ", length=" << length << endl;
+
+//   sqlite3_stmt *stmt_main;
+//   sqlite3_prepare_v2(db, "SELECT * FROM file_segments WHERE path = ? AND version = ?;", -1, &stmt_main, 0);
+//   sqlite3_bind_text(stmt_main, 1, path, -1, SQLITE_STATIC);
+//   sqlite3_bind_int(stmt_main, 2, ver);
+//   int seg = -1;
+//   int res;
+//   int length_curr = 0;
+//   bool flag_over = false;
+//   int curr_ver = time(0);
+
+//   while (sqlite3_step(stmt_main) == SQLITE_ROW)
+//   {
+//     seg++;
+//     if (length == 0 || flag_over)
+//     {
+//       sqlite3_stmt *stmt;
+//       sqlite3_prepare_v2(db, "UPDATE file_system SET current_version = ? WHERE path = ?;", -1, &stmt, 0);
+//       sqlite3_bind_int(stmt, 1, curr_ver); // set current_version to the current timestamp
+//       sqlite3_bind_text(stmt, 2, path, -1, SQLITE_STATIC);
+//       res = sqlite3_step(stmt);
+//       if (res != SQLITE_OK && res != SQLITE_DONE)
+//       {
+//         FILE_LOG(LOG_ERROR) << "truncate all segment: update file_system error. " << res << endl;
+//         return res;
+//       }
+//       sqlite3_finalize(stmt);
+//       FILE_LOG(LOG_DEBUG) << "here:" << curr_ver << endl;
+//       return 0;
+//       // sqlite3_stmt *stmt;
+//       // sqlite3_prepare_v2(db, "DELETE FROM file_segments WHERE path = ? AND version = ? AND segment = ?;", -1, &stmt, 0);
+//       // sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+//       // sqlite3_bind_int(stmt, 2, ver);
+//       // sqlite3_bind_int(stmt, 3, seg);
+//       // sqlite3_step(stmt);
+//       // sqlite3_finalize(stmt);
+//     }
+//     else
+//     {
+//       int size = sqlite3_column_bytes(stmt_main, 4);
+//       length_curr += size;
+//       if (length_curr < length)
+//         continue;
+//       flag_over = true;
+//       char data[size];
+//       int len_use = length - (seg * ndnfs::seg_size);
+//       memmove(data, (char *)sqlite3_column_blob(stmt_main, 4), len_use);
+//       sqlite3_stmt *stmt;
+//       // sqlite3_prepare_v2(db, "IPDATE file_segments SET content = ? WHERE path = ? AND segment = ? and version = ?;", -1, &stmt, 0);
+//       sqlite3_prepare_v2(db, "INSERT INTO file_segments (content, path, segment, version) VALUES (?, ?, ?, ?);", -1, &stmt, 0);
+//       sqlite3_bind_blob(stmt, 1, data, len_use, SQLITE_STATIC);
+//       sqlite3_bind_text(stmt, 2, path, -1, SQLITE_STATIC);
+//       sqlite3_bind_int(stmt, 3, seg);
+//       sqlite3_bind_int(stmt, 4, curr_ver);
+//       sqlite3_step(stmt);
+//       sqlite3_finalize(stmt);
+//       // sign_segment(path, ver, seg, data, len_use);
+//     }
+//   }
+//   if (flag_over)
+//   {
+//     sqlite3_stmt *stmt;
+//     sqlite3_prepare_v2(db, "UPDATE file_system SET current_version = ? WHERE path = ?;", -1, &stmt, 0);
+//     sqlite3_bind_int(stmt, 1, curr_ver); // set current_version to the current timestamp
+//     sqlite3_bind_text(stmt, 2, path, -1, SQLITE_STATIC);
+//     res = sqlite3_step(stmt);
+//     if (res != SQLITE_OK && res != SQLITE_DONE)
+//     {
+//       FILE_LOG(LOG_ERROR) << "truncate all segment: update file_system error. " << res << endl;
+//       return res;
+//     }
+//     sqlite3_finalize(stmt);
+//     FILE_LOG(LOG_DEBUG)<< "here:"<< curr_ver<<endl;
+//     return 0;
+//   }
+// }
+
 int addtemp_segment(const char *path, const char *buf, size_t size, off_t offset)
 {
   FILE_LOG(LOG_DEBUG) << "addtemp_segment path=" << path << endl;
@@ -299,6 +469,12 @@ void copycurr_segment(const char *path, int cuur_ver)
   sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
   sqlite3_bind_int(stmt, 2, cuur_ver);
   int res = sqlite3_step(stmt);
+  if (res != SQLITE_OK)
+  {
+    FILE_LOG(LOG_DEBUG) << "no segment exists" << endl;
+    sqlite3_finalize(stmt);
+    return;
+  }
   int seg_max = sqlite3_column_int(stmt, 0);
   sqlite3_finalize(stmt);
   for (int seg = 0; seg <= seg_max; ++seg)
@@ -312,7 +488,9 @@ void copycurr_segment(const char *path, int cuur_ver)
     res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (res != SQLITE_ROW)
-      FILE_LOG(LOG_DEBUG) << "copy current segment error! path:"<<path<<" seg:"<< seg<<" cuur_ver:"<< cuur_ver<< endl;
+      FILE_LOG(LOG_DEBUG) << "copy current segment error! path:" << path << " seg:" << seg << " cuur_ver:" << cuur_ver << endl;
+    else
+      FILE_LOG(LOG_DEBUG) << "copy current segment sucess!" << endl;
   }
 }
 

@@ -39,6 +39,7 @@ int sign_segment(const char* path, int ver, int seg, const char *data, int len);
 void remove_segments(const char* path, const int ver, const int start = 0);
 
 void truncate_segment(const char* path, const int ver, const int seg, const off_t length);
+int truncate_all_segment(const char *path, const int ver, const off_t length);
 
 void copycurr_segment(const char* path, int cuur_ver);
 

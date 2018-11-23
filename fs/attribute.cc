@@ -28,6 +28,14 @@ int ndnfs_getattr(const char *path, struct stat *stbuf)
 {
   FILE_LOG(LOG_DEBUG) << "ndnfs_getattr: path=" << path << endl;
 
+  // It's hard to implement stat *
+  // string  pre;
+  // string name;
+  // split_last_component(path, pre, name);
+  // if (strcmp(name.c_str(), "*") == 0)
+  // {
+  //   return 0;
+  // }
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2(db, "SELECT mode, atime, current_version, size, nlink, type FROM file_system WHERE path = ?", -1, &stmt, 0);
   sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);

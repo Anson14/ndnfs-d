@@ -30,7 +30,7 @@ int ndnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
   // read from db
   sqlite3_stmt *stmt;
 
-  int level = 0;  // director's level
+  int level = 0; // director's level
 
   // Get father dir's level
   sqlite3_prepare_v2(db, "SELECT level FROM file_system WHERE path = ?;", -1, &stmt, 0);
@@ -42,7 +42,7 @@ int ndnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
     return -ENOENT;
   }
   level = sqlite3_column_int(stmt, 0);
-  level +=1;
+  level += 1;
   sqlite3_finalize(stmt);
 
   sqlite3_prepare_v2(db, "SELECT path FROM file_system WHERE path LIKE ? AND level = ?;", -1, &stmt, 0);
@@ -59,7 +59,7 @@ int ndnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
 
   filler(buf, ".", NULL, 0);
   filler(buf, "..", NULL, 0);
-  while(sqlite3_step(stmt) == SQLITE_ROW)
+  while (sqlite3_step(stmt) == SQLITE_ROW)
   {
     // FILE_LOG(LOG_DEBUG)<<"path: "<< sqlite3_column_text(stmt, 0)<< endl;
     char child_dir[sqlite3_column_bytes(stmt, 0)];
@@ -67,7 +67,7 @@ int ndnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off
     string prefix;
     string name;
     split_last_component(child_dir, prefix, name);
-    // FILE_LOG(LOG_DEBUG)<<"path: "<< name<< endl;  
+    // FILE_LOG(LOG_DEBUG)<<"path: "<< name<< endl;
     filler(buf, name.c_str(), NULL, 0);
   }
 
@@ -203,15 +203,55 @@ int ndnfs_rmdir(const char *path)
     return -EINVAL;
   }
 
-  char fullPath[PATH_MAX];
-  abs_path(fullPath, path);
-  int ret = rmdir(fullPath);
-
-  if (ret == -1)
+  sqlite3_stmt *stmt;
+  sqlite3_prepare_v2(db, "select level FROM file_system WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+  int res = sqlite3_step(stmt);
+  if (res != SQLITE_ROW)
   {
-    FILE_LOG(LOG_ERROR) << "ndnfs_rmdir: rmdir failed. Errno: " << errno << endl;
+    sqlite3_finalize(stmt);
+    FILE_LOG(LOG_DEBUG) << "rmdir error, no such directory!" << endl;
     return -errno;
   }
+  sqlite3_finalize(stmt);
+
+  char path_noexact[100];
+  strcpy(path_noexact, path);
+  strcat(path_noexact, "/%");
+
+  // Delete file in this directory
+  sqlite3_prepare_v2(db, "DELETE FROM file_system WHERE path LIKE ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path_noexact, -1, SQLITE_STATIC);
+  res = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+
+  sqlite3_prepare_v2(db, "DELETE FROM file_version WHERE path LIKE ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path_noexact, -1, SQLITE_STATIC);
+  res = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+
+  sqlite3_prepare_v2(db, "DELETE FROM file_segments WHERE path LIKE ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path_noexact, -1, SQLITE_STATIC);
+  res = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+
+  // Delete the directory
+  sqlite3_prepare_v2(db, "DELETE FROM file_system WHERE path = ?;", -1, &stmt, 0);
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+  res = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
 
   return 0;
+
+  // char fullPath[PATH_MAX];
+  // abs_path(fullPath, path);
+  // int ret = rmdir(fullPath);
+
+  // if (ret == -1)
+  // {
+  //   FILE_LOG(LOG_ERROR) << "ndnfs_rmdir: rmdir failed. Errno: " << errno << endl;
+  //   return -errno;
+  // }
+
+  // return 0;
 }
