@@ -479,7 +479,7 @@ void copycurr_segment(const char *path, int cuur_ver)
   sqlite3_finalize(stmt);
   for (int seg = 0; seg <= seg_max; ++seg)
   {
-    sqlite3_prepare16_v2(db, "INSERT INTO file_segments (path, version, segment, signature, content) VALUES(?, 100000, ?, 'NONE', (SELECT content FROM file_segments WHERE (path = ? AND version = ? AND segment = ?)));", -1, &stmt, 0);
+    sqlite3_prepare_v2(db, "INSERT INTO file_segments (path, version, segment, signature, content) VALUES(?, 100000, ?, 'NONE', (SELECT content FROM file_segments WHERE (path = ? AND version = ? AND segment = ?)));", -1, &stmt, 0);
     sqlite3_bind_text(stmt, 1, path_temp, -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 2, seg);
     sqlite3_bind_text(stmt, 3, path, -1, SQLITE_STATIC);
@@ -487,7 +487,7 @@ void copycurr_segment(const char *path, int cuur_ver)
     sqlite3_bind_int(stmt, 5, seg);
     res = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    if (res != SQLITE_ROW)
+    if (res != SQLITE_DONE)
       FILE_LOG(LOG_DEBUG) << "copy current segment error! path:" << path << " seg:" << seg << " cuur_ver:" << cuur_ver << endl;
     else
       FILE_LOG(LOG_DEBUG) << "copy current segment sucess!" << endl;
