@@ -27,6 +27,14 @@ using namespace std;
 
 int ndnfs_open(const char *path, struct fuse_file_info *fi)
 {
+
+  FILE_LOG(LOG_DEBUG)<< "THIS IS A TEST!!!!!!!"<< endl;
+  char test_buf[1024];
+  memset(test_buf, '\0', 1024);
+  ndnfs_read("/hi.txt", test_buf, 10, 2, fi);
+  FILE_LOG(LOG_DEBUG)<< test_buf<< endl;
+  FILE_LOG(LOG_DEBUG)<< "THIS IS A TEST!!!!!!!"<< endl;
+
   FILE_LOG(LOG_DEBUG) << "ndnfs_open: path=" << path << endl;
   // // The actual open operation
   // char full_path[PATH_MAX];
@@ -241,6 +249,7 @@ int ndnfs_read(const char *path, char *buf, size_t size, off_t offset, struct fu
   }
   if (sqlite3_column_int(stmt, 0) == 0)
   {
+    // File is empty, So there is no segment in table file_segments
     sqlite3_finalize(stmt);
     return 0;
   }
@@ -261,15 +270,18 @@ int ndnfs_read(const char *path, char *buf, size_t size, off_t offset, struct fu
   if (res == SQLITE_ROW)
   {
     int content_size = sqlite3_column_bytes(stmt, 0);
-    char *content[seg_size];
+    char content[seg_size];
     memmove(content, (char *)sqlite3_column_blob(stmt, 0), content_size);
     int content_offset = offset - seg * seg_size;
-    len += content_size - content_offset;
+    len += min(content_size - content_offset, (int)size);
     memmove(buf, content + content_offset, len);
-    // FILE_LOG(LOG_DEBUG)<< "content:"<< content_size<< endl;
+    // The buf will be garbled withou this sentence
+    buf[len] = '\0';
+    // FILE_LOG(LOG_DEBUG)<< "content:"<< content<< endl;
     sqlite3_finalize(stmt);
     if (content_size < seg_size)
     {
+          FILE_LOG(LOG_DEBUG)<< "len="<<len<< endl;
       // means this segment is the last segment
       return len;
     }
