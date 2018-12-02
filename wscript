@@ -81,6 +81,7 @@ def build (bld):
         use = 'BOOST NDNCPP SQLITE3 PROTOBUF',
         includes = 'fs server'
         )
+"""
     bld (
         target = "test-client",
         features = ["cxx", "cxxprogram"],
@@ -88,6 +89,7 @@ def build (bld):
         use = 'NDNCPP PROTOBUF',
         includes = 'server'
         )
+"""
 
 @Configure.conf
 def add_supported_cxxflags(self, cxxflags):

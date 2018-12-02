@@ -616,6 +616,8 @@ int ndnfs_release(const char *path, struct fuse_file_info *fi)
     return -ENOENT;
   }
   latest_version = sqlite3_column_int(stmt, 0);
+  // Make sure no unique conflict
+  latest_version += 1;
   sqlite3_finalize(stmt);
 
   if ((fi->flags & O_ACCMODE) != O_RDONLY)
@@ -675,6 +677,9 @@ int ndnfs_release(const char *path, struct fuse_file_info *fi)
     }
 
     ndnfs_updateattr(path, curr_version);
+
+    // delete no signature segments
+    removenosign_segment(path);
 
     //   char full_path[PATH_MAX];
     //   abs_path(full_path, path);

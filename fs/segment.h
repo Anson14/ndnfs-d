@@ -47,4 +47,6 @@ int addtemp_segment(const char *path, const char *buf, size_t size, off_t offset
 
 int removetemp_segment(const char *path, int ver);
 
+int removenosign_segment(const char* path);
+
 #endif
